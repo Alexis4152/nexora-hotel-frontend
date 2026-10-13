@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Rampa de marca por defecto (teal profundo). utils/theme.js la reemplaza con el color del hotel.
+   Formato "R G B" para poder usar opacidad: rgb(var(--brand-600) / .5) */
+:root {
+  --brand-50: 240 253 250;
+  --brand-100: 204 251 241;
+  --brand-200: 153 246 228;
+  --brand-300: 94 234 212;
+  --brand-400: 45 212 191;
+  --brand-500: 20 184 166;
+  --brand-600: 13 148 136;
+  --brand-700: 15 118 110;
+  --brand-800: 17 94 89;
+  --brand-900: 19 78 74;
+  --brand-950: 4 47 46;
+  --accent-300: 233 213 161;
+  --accent-400: 220 191 120;
+  --accent-500: 200 162 74;
+  --accent-600: 169 133 47;
+  --sidebar: 10 15 28;
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+/* Listas desplegables nativas (<select>). Los campos usan fondo semitransparente y el navegador pinta cada
+   <option> por separado: sin esto, en modo oscuro salían en blanco con el texto claro heredado (ilegibles). */
+select option,
+select optgroup {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+.dark select option,
+.dark select optgroup {
+  background-color: #0e1526; /* ink-850 */
+  color: #e2e8f0;
+}
+select option:disabled {
+  color: #94a3b8;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-ink-950 dark:text-slate-100 font-sans;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: rgb(var(--brand-500) / 0.25);
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand-500));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-variation-settings: 'SOFT' 50, 'WONK' 0;
+    letter-spacing: -0.02em;
+  }
+
+  /* ── Botones ─────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 h-10 text-sm font-semibold
+      transition-all duration-150 select-none whitespace-nowrap
+      disabled:opacity-50 disabled:cursor-not-allowed active:scale-[.98];
+  }
+  .btn-sm { @apply h-8 px-3 text-xs rounded-lg; }
+  .btn-lg { @apply h-12 px-6 text-base; }
+  .btn-primary {
+    @apply btn text-white bg-gradient-to-b from-brand-500 to-brand-700 shadow-sm
+      hover:from-brand-500 hover:to-brand-600 hover:shadow-glow;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-50
+      dark:bg-white/5 dark:text-slate-200 dark:ring-white/10 dark:hover:bg-white/10;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5;
+  }
+  .btn-danger {
+    @apply btn text-white bg-rose-600 hover:bg-rose-500;
+  }
+  .btn-gold {
+    @apply btn text-ink-950 bg-gradient-to-b from-gold-400 to-gold-500 hover:from-gold-300 hover:to-gold-400;
+  }
+
+  /* ── Formularios ─────────────────────────────────────────────────────── */
+  .label { @apply block text-[13px] font-medium text-slate-700 dark:text-slate-300 mb-1.5; }
+  .input {
+    @apply w-full h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900
+      placeholder:text-slate-400 shadow-sm transition
+      focus:outline-none focus:ring-4 focus:ring-brand-500/15 focus:border-brand-500
+      dark:bg-white/[.04] dark:border-white/10 dark:text-slate-100 dark:placeholder:text-slate-500;
+  }
+  .input-error {
+    @apply border-rose-400 focus:border-rose-500 focus:ring-rose-500/15 dark:border-rose-500/60;
+  }
+  .field-error { @apply mt-1.5 text-xs font-medium text-rose-600 dark:text-rose-400; }
+  .field-hint { @apply mt-1.5 text-xs text-slate-500 dark:text-slate-400; }
+
+  /* ── Superficies ─────────────────────────────────────────────────────── */
+  .card {
+    @apply rounded-2xl bg-white ring-1 ring-slate-200/70 shadow-soft
+      dark:bg-ink-900 dark:ring-white/[.07] dark:shadow-none;
+  }
+  .glass {
+    @apply bg-white/[.06] backdrop-blur-xl ring-1 ring-white/10;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset;
+  }
+  .kbd {
+    @apply inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-1.5 font-mono text-[11px]
+      text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400;
+  }
+
+  /* ── Tablas ──────────────────────────────────────────────────────────── */
+  .table-head th {
+    @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400;
+  }
+  .table-row td { @apply px-4 py-3.5 text-sm align-middle; }
+  .table-row { @apply border-t border-slate-100 dark:border-white/[.06] transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[.02]; }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-lg bg-slate-200/70 dark:bg-white/[.06];
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full
+      bg-gradient-to-r from-transparent via-white/50 to-transparent dark:via-white/[.06];
+    /* CSS plano a propósito: no depende de que Tailwind tenga registrada la animación. */
+    animation: nx-shimmer 1.4s infinite;
+  }
+}
+
+@keyframes nx-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Fondo "aurora" para pantallas de marca. */
+.aurora {
+  background:
+    radial-gradient(60% 50% at 15% 10%, rgb(var(--brand-500) / .35), transparent 60%),
+    radial-gradient(45% 45% at 85% 20%, rgb(var(--accent-500) / .22), transparent 60%),
+    radial-gradient(55% 60% at 60% 100%, rgb(var(--brand-700) / .45), transparent 60%),
+    #05080f;
+}
+.grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.grid-lines {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / .05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / .05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
