@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Banknote, CreditCard, History, Landmark, Lock, Printer, Unlock, Vault, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Banknote, CreditCard, History, Landmark, Lock, Printer, Search, Unlock, Vault, Wallet, X } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import { Badge, Button, EmptyState, Input, Modal, Pagination, Skeleton } from '../../components/ui'
 import { Tabs, Textarea } from '../../components/catalog'
@@ -8,6 +8,7 @@ import { cashApi } from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { errorMessage, fieldErrors } from '../../api/client'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { money, moneyInput } from '../../utils/money'
 import { formatDateTime } from '../../utils/format'
 import ReservationDrawer from './ReservationDrawer'
@@ -289,13 +290,17 @@ function Stat({ label, value, tone = '' }) {
 
 function SessionHistory() {
   const toast = useToast()
+  const { can } = useAuth()
+  const viewAll = can('CASH:VIEW_ALL')
   const [page, setPage] = useState(0)
+  const [query, setQuery] = useState('')
   const [data, setData] = useState(null)
   const [selected, setSelected] = useState(null)
+  const q = useDebouncedValue(query.trim())
   useEffect(() => {
-    cashApi.sessions({ page, size: 15 }).then(setData).catch((e) => toast.error(errorMessage(e)))
+    cashApi.sessions({ page, size: 15, q: q || undefined }).then(setData).catch((e) => toast.error(errorMessage(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [page, q])
   const open = (id) => cashApi.session(id).then(setSelected).catch((e) => toast.error(errorMessage(e)))
 
   if (selected) {
@@ -308,8 +313,27 @@ function SessionHistory() {
   }
   return (
     <div className="card overflow-hidden">
+      {/* Solo quien ve las cajas de todos puede buscar por responsable; los demás solo ven las suyas. */}
+      {viewAll && (
+        <div className="border-b border-slate-100 p-4 dark:border-white/[.06]">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input className="input pl-10 pr-10" placeholder={tx('Buscar por responsable…')} value={query} maxLength={100}
+              onChange={(e) => { setQuery(e.target.value); setPage(0) }} aria-label={tx('Buscar por responsable')} />
+            {query && (
+              <button type="button" onClick={() => { setQuery(''); setPage(0) }} aria-label={tx('Limpiar búsqueda')}
+                className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {!data ? <div className="space-y-3 p-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
-        : data.content.length === 0 ? <EmptyState icon={History} title={tx('Aún no hay turnos de caja')} /> : (
+        : data.content.length === 0 ? (
+          q ? <EmptyState icon={Search} title={tx('Sin resultados')} description={tx('Ningún responsable coincide con «{0}».', q)} />
+            : <EmptyState icon={History} title={tx('Aún no hay turnos de caja')} />
+        ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-sm">

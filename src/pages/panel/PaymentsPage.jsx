@@ -32,6 +32,16 @@ export default function PaymentsPage() {
   )
 }
 
+/** Filtro con su etiqueta arriba. {@code as="div"} cuando adentro hay varios botones (un label los activaría todos). */
+function FilterField({ label, as: Tag = 'label', className = '', children }) {
+  return (
+    <Tag className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      {children}
+    </Tag>
+  )
+}
+
 function Movements({ onOpen }) {
   const { hotel } = useHotel()
   const toast = useToast()
@@ -59,36 +69,56 @@ function Movements({ onOpen }) {
 
   return (
     <div className="space-y-5">
-      <div className="card space-y-3 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-slate-500">{tx('Desde')}<input type="date" className="input mt-1 w-40" value={filters.from} max={filters.to} onChange={set('from')} /></label>
-          <label className="text-xs text-slate-500">{tx('Hasta')}<input type="date" className="input mt-1 w-40" value={filters.to} min={filters.from} onChange={set('to')} /></label>
-          <div className="flex gap-1">
-            {presets.map(([label, from, to]) => (
-              <button key={label} className={`chip ${filters.from === from && filters.to === to ? 'bg-ink-900 text-white dark:bg-white dark:text-ink-900' : 'bg-slate-100 dark:bg-white/5'}`}
-                onClick={() => { setFilters({ ...filters, from, to }); setPage(0) }}>{label}</button>
-            ))}
+      {/* Rejilla de 12 columnas: cada filtro lleva su etiqueta ARRIBA y todos los controles miden lo mismo de alto,
+          así la fila queda alineada por abajo y los selectores nunca cortan su texto. Fechas + periodo + buscador
+          caben en una fila solo desde 1400 px; antes, el buscador baja para que las fechas no se recorten. */}
+      <div className="card grid grid-cols-2 gap-x-3 gap-y-4 p-4 lg:grid-cols-12">
+        <FilterField label={tx('Desde')} className="lg:col-span-3 min-[1400px]:col-span-2">
+          <input type="date" className="input" value={filters.from} max={filters.to} onChange={set('from')} />
+        </FilterField>
+        <FilterField label={tx('Hasta')} className="lg:col-span-3 min-[1400px]:col-span-2">
+          <input type="date" className="input" value={filters.to} min={filters.from} onChange={set('to')} />
+        </FilterField>
+        <FilterField label={tx('Periodo')} as="div" className="col-span-2 lg:col-span-6 min-[1400px]:col-span-3">
+          <div className="flex h-11 items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/[.04]" role="group" aria-label={tx('Periodo')}>
+            {presets.map(([label, from, to]) => {
+              const active = filters.from === from && filters.to === to
+              return (
+                <button key={label} type="button" aria-pressed={active} onClick={() => { setFilters({ ...filters, from, to }); setPage(0) }}
+                  className={`h-full flex-1 whitespace-nowrap rounded-[10px] px-2 text-xs font-semibold transition ${active
+                    ? 'bg-white text-ink-900 shadow-sm dark:bg-white/15 dark:text-white'
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                  {label}
+                </button>
+              )
+            })}
           </div>
-          <div className="relative min-w-[220px] flex-1">
+        </FilterField>
+        <FilterField label={tx('Buscar')} className="col-span-2 lg:col-span-12 min-[1400px]:col-span-5">
+          <span className="relative block">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input className="input pl-10" placeholder={tx('Folio, huésped o referencia…')} value={query} maxLength={100}
-              onChange={(e) => { setQuery(e.target.value); setPage(0) }} aria-label={tx('Buscar pago')} />
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <select className="input w-44" value={filters.method} onChange={set('method')} aria-label={tx('Método')}>
+              onChange={(e) => { setQuery(e.target.value); setPage(0) }} />
+          </span>
+        </FilterField>
+        <FilterField label={tx('Método')} className="col-span-2 sm:col-span-1 lg:col-span-4">
+          <select className="input" value={filters.method} onChange={set('method')}>
             <option value="">{tx('Todos los métodos')}</option>
             {Object.entries(METHODS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
-          <select className="input w-40" value={filters.kind} onChange={set('kind')} aria-label={tx('Tipo')}>
+        </FilterField>
+        <FilterField label={tx('Tipo')} className="col-span-2 sm:col-span-1 lg:col-span-4">
+          <select className="input" value={filters.kind} onChange={set('kind')}>
             <option value="">{tx('Todos los tipos')}</option>
             {Object.entries(KINDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <select className="input w-40" value={filters.status} onChange={set('status')} aria-label={tx('Estado')}>
+        </FilterField>
+        <FilterField label={tx('Estado')} className="col-span-2 lg:col-span-4">
+          <select className="input" value={filters.status} onChange={set('status')}>
             <option value="">{tx('Todos los estados')}</option>
             {Object.entries(PAYMENT_STATUS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
           </select>
-        </div>
+        </FilterField>
       </div>
 
       {data && (
