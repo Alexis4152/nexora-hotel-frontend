@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
-  BedDouble, Ban, CalendarX2, CheckCircle2, History, Layers, Pencil, Plus, Search, Sparkles, Trash2,
+  BedDouble, Ban, CalendarX2, CheckCircle2, History, Layers, LogIn, LogOut, Pencil, Plus, Search, Sparkles, Trash2,
   Users, Wrench,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import { ActionMenu, Badge, Button, ConfirmDialog, EmptyState, Input, Modal, Select, Skeleton } from '../../components/ui'
 import { BED_TYPES, DynamicIcon, Gallery, IconPicker, ImageDrop, ROOM_STATUS, Tabs, Textarea, moveIds } from '../../components/catalog'
+import { fmtDate, todayIn } from '../../components/reservations'
+import ReservationDrawer from './ReservationDrawer'
 import { Can } from '../../guards'
 import { inventoryApi } from '../../api'
 import { useAuth } from '../../context/AuthContext'
@@ -19,7 +22,9 @@ import { tx } from '../../i18n'
 
 export default function RoomsPage() {
   const { can } = useAuth()
-  const [tab, setTab] = useState('rooms')
+  const [params, setParams] = useSearchParams()
+  // Quien solo limpia empieza en su tablero. ?tab=limpieza lo abre también (avisos de la campanita).
+  const [tab, setTab] = useState(() => (params.get('tab') === 'limpieza' || !can('ROOMS:VIEW') ? 'housekeeping' : 'rooms'))
   const [rooms, setRooms] = useState(null)
   const [types, setTypes] = useState(null)
   const [amenities, setAmenities] = useState([])
@@ -37,6 +42,13 @@ export default function RoomsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (params.get('tab') !== 'limpieza') return
+    setTab('housekeeping')
+    load() // llegó por un aviso: hay algo nuevo que limpiar
+    setParams((p) => { p.delete('tab'); return p }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
 
   const tabs = [
     { key: 'rooms', label: tx('Habitaciones'), icon: BedDouble, count: rooms?.filter((r) => r.active).length },
@@ -65,6 +77,8 @@ export default function RoomsPage() {
 /** Tablero de limpieza: el check-out deja la habitación "en limpieza"; aquí se marca lista con un clic. */
 function HousekeepingTab({ rooms, reload }) {
   const { can } = useAuth()
+  const { hotel } = useHotel()
+  const today = todayIn(hotel.timezone)
   const toast = useToast()
   const [busy, setBusy] = useState(null)
   if (!rooms) return <Skeleton className="h-64" />
@@ -90,7 +104,9 @@ function HousekeepingTab({ rooms, reload }) {
   return (
     <div className="grid gap-5 lg:grid-cols-3">
       {columns.map(([status, title, tone, empty]) => {
-        const list = active.filter((r) => r.status === status)
+        // Primero lo urgente: por limpiar o listas con llegada hoy; ocupadas, las que salen antes.
+        const urgency = (r) => (status === 'OCCUPIED' ? r.currentStay?.checkOut || '9999' : r.nextArrival?.checkIn === today ? '0' : '1')
+        const list = active.filter((r) => r.status === status).sort((a, b) => urgency(a).localeCompare(urgency(b)))
         return (
           <section key={status} className="card overflow-hidden">
             <div className="flex items-center gap-3 border-b border-slate-100 p-4 dark:border-white/[.06]">
@@ -105,7 +121,15 @@ function HousekeepingTab({ rooms, reload }) {
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-100 font-display text-sm font-semibold dark:bg-white/5">{room.number}</div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{room.roomTypeName}</p>
-                      <p className="text-xs text-slate-500">{room.floor ? tx('Piso {0}', room.floor) : '—'}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {room.floor ? tx('Piso {0}', room.floor) : '—'}
+                        {status === 'OCCUPIED' && room.currentStay && (
+                          <span className={room.currentStay.checkOut <= today ? 'font-semibold text-amber-600 dark:text-amber-400' : ''}> · {departureText(room.currentStay, today)}</span>
+                        )}
+                        {status !== 'OCCUPIED' && room.nextArrival?.checkIn === today && (
+                          <span className="font-semibold text-brand-600 dark:text-brand-300"> · {tx('Llega hoy')}</span>
+                        )}
+                      </p>
                     </div>
                     {editable && status === 'CLEANING' && (
                       <Button size="sm" loading={busy === room.id} onClick={() => move(room, 'AVAILABLE')}><CheckCircle2 className="h-4 w-4" /> {tx('Lista')}</Button>
@@ -128,6 +152,8 @@ function HousekeepingTab({ rooms, reload }) {
 
 function RoomsTab({ rooms, types, reload }) {
   const { can } = useAuth()
+  const { hotel } = useHotel()
+  const today = todayIn(hotel.timezone)
   const toast = useToast()
   const [filter, setFilter] = useState('ALL')
   const [query, setQuery] = useState('')
@@ -136,10 +162,16 @@ function RoomsTab({ rooms, types, reload }) {
   const [blockFor, setBlockFor] = useState(null)
   const [historyFor, setHistoryFor] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [openRes, setOpenRes] = useState(null) // reservación abierta encima, sin salir de Habitaciones
 
+  // "Salen hoy" incluye a quien ya debía haber salido; "Llegan hoy", la siguiente reservación de la habitación.
+  const departing = (r) => r.active && !!r.currentStay && r.currentStay.checkOut <= today
+  const arriving = (r) => r.active && r.nextArrival?.checkIn === today
   const visible = useMemo(() => (rooms || []).filter((r) =>
-    (filter === 'ALL' ? r.active : filter === 'INACTIVE' ? !r.active : r.active && r.status === filter)
-    && (!query || r.number.toLowerCase().includes(query.toLowerCase()) || r.roomTypeName.toLowerCase().includes(query.toLowerCase()))), [rooms, filter, query])
+    (filter === 'ALL' ? r.active : filter === 'INACTIVE' ? !r.active : filter === 'DEPARTING' ? departing(r)
+      : filter === 'ARRIVING' ? arriving(r) : r.active && r.status === filter)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    && (!query || r.number.toLowerCase().includes(query.toLowerCase()) || r.roomTypeName.toLowerCase().includes(query.toLowerCase()))), [rooms, filter, query, today])
 
   const floors = useMemo(() => {
     const map = new Map()
@@ -152,16 +184,19 @@ function RoomsTab({ rooms, types, reload }) {
   }, [visible])
 
   const counts = useMemo(() => {
-    const c = { ALL: 0, INACTIVE: 0 }
+    const c = { ALL: 0, INACTIVE: 0, DEPARTING: 0, ARRIVING: 0 }
     ;(rooms || []).forEach((r) => {
       if (!r.active) c.INACTIVE += 1
       else {
         c.ALL += 1
         c[r.status] = (c[r.status] || 0) + 1
+        if (departing(r)) c.DEPARTING += 1
+        if (arriving(r)) c.ARRIVING += 1
       }
     })
     return c
-  }, [rooms])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms, today])
 
   if (!rooms) return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-36" />)}</div>
 
@@ -185,6 +220,8 @@ function RoomsTab({ rooms, types, reload }) {
           {Object.entries(ROOM_STATUS).map(([k, s]) => (
             <FilterChip key={k} active={filter === k} onClick={() => setFilter(k)} count={counts[k] || 0} dot={s.dot}>{s.label}</FilterChip>
           ))}
+          <FilterChip active={filter === 'DEPARTING'} onClick={() => setFilter('DEPARTING')} count={counts.DEPARTING} icon={LogOut}>{tx('Salen hoy')}</FilterChip>
+          <FilterChip active={filter === 'ARRIVING'} onClick={() => setFilter('ARRIVING')} count={counts.ARRIVING} icon={LogIn}>{tx('Llegan hoy')}</FilterChip>
           {counts.INACTIVE > 0 && <FilterChip active={filter === 'INACTIVE'} onClick={() => setFilter('INACTIVE')} count={counts.INACTIVE}>{tx('Desactivadas')}</FilterChip>}
         </div>
         <div className="flex flex-1 gap-2 lg:justify-end">
@@ -215,7 +252,7 @@ function RoomsTab({ rooms, types, reload }) {
           </h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {list.map((r) => (
-              <RoomCard key={r.id} room={r} onEdit={() => setEditing(r)} onStatus={() => setStatusFor(r)}
+              <RoomCard key={r.id} room={r} today={today} onOpenReservation={setOpenRes} onEdit={() => setEditing(r)} onStatus={() => setStatusFor(r)}
                 onBlock={() => setBlockFor(r)} onHistory={() => setHistoryFor(r)} onToggle={() => setConfirm(r)} can={can} />
             ))}
           </div>
@@ -223,9 +260,12 @@ function RoomsTab({ rooms, types, reload }) {
       ))}
 
       {editing && <RoomFormModal room={editing.id ? editing : null} types={types} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
-      {statusFor && <StatusModal room={statusFor} onClose={() => setStatusFor(null)} onSaved={() => { setStatusFor(null); reload() }} />}
+      {statusFor && <StatusModal room={statusFor} today={today} onClose={() => setStatusFor(null)} onSaved={() => { setStatusFor(null); reload() }}
+        onOpenReservation={(id) => { setStatusFor(null); setOpenRes(id) }} />}
       {blockFor && <BlockModal room={blockFor} onClose={() => { setBlockFor(null); reload() }} />}
       {historyFor && <HistoryModal room={historyFor} onClose={() => setHistoryFor(null)} />}
+      {/* Lo que se haga en la reservación (check-out, cambio de fechas…) cambia el estado de las habitaciones: se recarga. */}
+      {openRes && <ReservationDrawer id={openRes} onClose={() => setOpenRes(null)} onChanged={reload} />}
       <ConfirmDialog open={!!confirm} tone={confirm?.active ? 'danger' : 'primary'} onClose={() => setConfirm(null)} onConfirm={toggleActive}
         title={confirm?.active ? tx('Desactivar habitación {0}', confirm?.number) : tx('Activar habitación {0}', confirm?.number)}
         confirmLabel={confirm?.active ? tx('Desactivar') : tx('Activar')}
@@ -234,17 +274,18 @@ function RoomsTab({ rooms, types, reload }) {
   )
 }
 
-function FilterChip({ active, onClick, count, dot, children }) {
+function FilterChip({ active, onClick, count, dot, icon: Icon, children }) {
   return (
     <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold ring-1 transition ${active ? 'bg-ink-900 text-white ring-ink-900 dark:bg-white dark:text-ink-900' : 'bg-white ring-slate-200 hover:ring-slate-300 dark:bg-white/[.03] dark:ring-white/10'}`}>
       {dot && <span className={`h-2 w-2 rounded-full ${dot}`} />}
+      {Icon && <Icon className="h-3.5 w-3.5 opacity-70" />}
       {children}
       <span className={`tabular-nums ${active ? 'opacity-70' : 'text-slate-400'}`}>{count}</span>
     </button>
   )
 }
 
-function RoomCard({ room, onEdit, onStatus, onBlock, onHistory, onToggle, can }) {
+function RoomCard({ room, today, onOpenReservation, onEdit, onStatus, onBlock, onHistory, onToggle, can }) {
   const s = ROOM_STATUS[room.status]
   const cover = room.images[0]?.url
   const block = room.activeBlocks[0]
@@ -272,7 +313,91 @@ function RoomCard({ room, onEdit, onStatus, onBlock, onHistory, onToggle, can })
         </div>
         <ActionMenu items={actions} label={tx('Acciones de la habitación {0}', room.number)} />
       </div>
+      {room.active && <RoomAgenda room={room} today={today} onOpen={onOpenReservation} />}
     </article>
+  )
+}
+
+const dayLabel = (iso) => fmtDate(iso, { weekday: 'short', day: 'numeric', month: 'short' })
+
+/** Cuándo se desocupa (o debió desocuparse) una habitación ocupada. */
+function departureText(stay, today) {
+  if (stay.checkOut < today) return tx('Debió salir el {0}', dayLabel(stay.checkOut))
+  return stay.checkOut === today ? tx('Sale hoy') : tx('Sale el {0}', dayLabel(stay.checkOut))
+}
+
+/**
+ * Lo que recepción y limpieza necesitan saber de la habitación hoy: quién está y cuándo sale, quién llega después
+ * y, si está bloqueada, por qué y hasta cuándo. El nombre y el enlace a la reservación solo vienen del servidor si
+ * la persona puede ver reservaciones; limpieza ve únicamente las fechas.
+ */
+function RoomAgenda({ room, today, onOpen }) {
+  const current = room.currentStay
+  const next = room.nextArrival
+  const block = room.activeBlocks.find((b) => b.startsOn <= today && b.endsOn > today)
+  const rows = []
+  if (current) {
+    const late = current.checkOut < today
+    rows.push({
+      key: 'out', icon: LogOut, stay: current, strong: current.checkOut <= today,
+      tone: late ? 'text-rose-600 dark:text-rose-400' : current.checkOut === today ? 'text-amber-600 dark:text-amber-400' : '',
+      text: departureText(current, today),
+    })
+  }
+  if (next) {
+    const arrivesToday = next.checkIn === today
+    // Con alguien en casa, la segunda línea habla del SIGUIENTE huésped: si entra el mismo día que sale el actual,
+    // la habitación no tiene día de descanso y limpieza debe tenerla lista entre una salida y la otra llegada.
+    const backToBack = !!current && next.checkIn <= current.checkOut
+    rows.push({
+      key: 'in', icon: LogIn, stay: next, strong: arrivesToday,
+      tone: arrivesToday ? 'text-brand-600 dark:text-brand-300' : '',
+      text: arrivesToday ? tx('Llega hoy')
+        : !current ? tx('Libre hasta el {0}', dayLabel(next.checkIn))
+        : backToBack ? tx('Ese mismo día entra otro huésped')
+        : tx('Siguiente huésped: entra el {0}', dayLabel(next.checkIn)),
+      // "Libre hasta…" habla de la habitación, no del huésped: no lleva nombre.
+      hideName: !arrivesToday && !current,
+    })
+  }
+  if (block) {
+    rows.push({ key: 'block', icon: Wrench, tone: 'text-rose-600 dark:text-rose-400', text: tx('Bloqueada hasta el {0}', dayLabel(block.endsOn)), detail: block.reason })
+  }
+  if (rows.length === 0) {
+    return (
+      <p className="border-t border-slate-100 px-5 py-3 pl-6 text-[13px] text-slate-400 dark:border-white/[.06]">
+        {room.status === 'AVAILABLE' || room.status === 'CLEANING' ? tx('Sin reservaciones próximas') : '—'}
+      </p>
+    )
+  }
+  return (
+    <ul className="space-y-1.5 border-t border-slate-100 px-5 py-3 pl-6 text-[13px] dark:border-white/[.06]">
+      {rows.map((row) => {
+        const Icon = row.icon
+        const name = row.hideName ? null : row.stay?.guestName
+        const body = (
+          <>
+            <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${row.tone || 'text-slate-400'}`} />
+            <span className="min-w-0 flex-1 truncate">
+              <span className={`${row.strong ? 'font-semibold' : ''} ${row.tone || 'text-slate-600 dark:text-slate-300'}`}>{row.text}</span>
+              {name && <span className="text-slate-500 dark:text-slate-400"> · {name}</span>}
+              {row.detail && <span className="text-slate-500 dark:text-slate-400"> · {row.detail}</span>}
+            </span>
+          </>
+        )
+        return (
+          <li key={row.key}>
+            {row.stay?.reservationId ? (
+              <button type="button" onClick={() => onOpen(row.stay.reservationId)}
+                title={tx('Abrir la reservación {0}', row.stay.folio)}
+                className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-2 rounded-lg px-1.5 py-0.5 text-left transition hover:bg-slate-100 dark:hover:bg-white/[.06]">
+                {body}
+              </button>
+            ) : <div className="flex items-start gap-2 py-0.5">{body}</div>}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -361,7 +486,7 @@ function useImageOps(owner, id, setImages, setBusy) {
   }
 }
 
-function StatusModal({ room, onClose, onSaved }) {
+function StatusModal({ room, today, onClose, onSaved, onOpenReservation }) {
   const { can } = useAuth()
   const toast = useToast()
   const [status, setStatus] = useState(room.status === 'OCCUPIED' ? 'CLEANING' : room.status)
@@ -380,6 +505,29 @@ function StatusModal({ room, onClose, onSaved }) {
     } finally {
       setSaving(false)
     }
+  }
+  // Con un huésped en casa el estado no se cambia a mano: la habitación sale de "Ocupada" con el check-out, que
+  // cobra el saldo, cierra la estancia y la manda a limpieza. Aquí solo se explica y se da el acceso a la reservación.
+  const stay = room.currentStay
+  if (stay) {
+    return (
+      <Modal open onClose={onClose} title={tx('Estado de la {0}', room.number)} icon={Sparkles} size="max-w-md"
+        footer={<>
+          <button className="btn-secondary" onClick={onClose}>{tx('Cerrar')}</button>
+          {stay.reservationId && <Button onClick={() => onOpenReservation(stay.reservationId)}><LogOut className="h-4 w-4" /> {tx('Abrir la reservación')}</Button>}
+        </>}>
+        <div className="flex items-start gap-3 rounded-xl bg-brand-50 p-4 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:ring-brand-400/20">
+          <span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${ROOM_STATUS.OCCUPIED.dot}`} />
+          <div className="min-w-0 text-sm">
+            <p className="font-semibold">{tx('Hay un huésped en casa')}</p>
+            <p className="mt-0.5 text-slate-600 dark:text-slate-300">{stay.guestName ? `${stay.guestName} · ` : ''}{departureText(stay, today)}</p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+          {tx('El estado de esta habitación no se cambia a mano. Al registrar la salida desde la reservación, el sistema cobra el saldo, cierra la estancia y pasa la habitación a limpieza automáticamente.')}
+        </p>
+      </Modal>
+    )
   }
   return (
     <Modal open onClose={onClose} title={tx('Estado de la {0}', room.number)} icon={Sparkles} size="max-w-md"

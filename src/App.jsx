@@ -2,7 +2,7 @@ import { Suspense, lazy, useLayoutEffect } from 'react'
 import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { ToastProvider } from './context/ToastContext'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { HotelProvider, useHotel } from './context/HotelContext'
 import { FullPageLoader, RequireAuth, RequirePermission } from './guards'
 import { setHotelSlug } from './tenant'
@@ -157,7 +157,10 @@ function HotelGate({ children }) {
   return children
 }
 
+/** Sin panel de inicio: quien solo ve limpieza entra directo a su tablero; los demás, al menú. */
 function NoDashboard() {
+  const { can } = useAuth()
+  if (can('HOUSEKEEPING:VIEW')) return <Navigate to="/panel/habitaciones?tab=limpieza" replace />
   return (
     <div className="card p-10 text-center">
       <h1 className="font-display text-2xl font-semibold">{tx('Bienvenido')}</h1>

@@ -1,6 +1,6 @@
 import {
   AlertTriangle, BedDouble, CalendarCheck2, CalendarClock, CalendarPlus, CalendarX2, Check, CreditCard, Hourglass, LogIn,
-  LogOut, RotateCcw, ShieldAlert, UserX,
+  LogOut, RotateCcw, ShieldAlert, Sparkles, UserX,
 } from 'lucide-react'
 import { METHODS } from './payments'
 import { fmtDate } from './reservations'
@@ -96,6 +96,12 @@ export function describe(n) {
     }
     case 'ROOM_READY':
       return { title: tx('Habitación {0} lista', p.room), body: tx('{0} llega hoy', p.guest), detail: p.folio, icon: BedDouble, tone: 'green' }
+    case 'ROOM_TO_CLEAN':
+      return {
+        title: tx('Habitación {0} por limpiar', p.room),
+        body: p.arrivalToday === 'true' ? tx('El huésped ya salió y hoy llega otro: es prioridad.') : tx('El huésped ya salió.'),
+        detail: p.roomType, icon: Sparkles, tone: p.arrivalToday === 'true' ? 'amber' : 'brand',
+      }
     case 'LATE_CHECKOUT':
       return {
         title: p.room ? tx('Salida pendiente: habitación {0}', p.room) : tx('Salida pendiente'),

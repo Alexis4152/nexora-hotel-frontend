@@ -47,7 +47,7 @@ export default function StaffLayout() {
   }
 
   const sections = NAVIGATION.map((s) => ({ ...s, items: s.items.filter((i) => canAny(...i.any)) })).filter((s) => s.items.length)
-  const role = user?.roles?.includes('ADMIN') ? tx('Administrador') : user?.roles?.includes('RECEPTIONIST') ? tx('Recepción') : tx('Personal')
+  const role = user?.roles?.includes('ADMIN') ? tx('Administrador') : user?.roles?.includes('RECEPTIONIST') ? tx('Recepción') : user?.roles?.includes('HOUSEKEEPER') ? tx('Limpieza') : tx('Personal')
 
   const sidebar = (mini) => (
     <div className="flex h-full flex-col">
